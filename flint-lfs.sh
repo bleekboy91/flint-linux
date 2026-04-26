@@ -7,11 +7,11 @@
 #  ██║     ███████╗██║██║ ╚████║   ██║
 #  ╚═╝     ╚══════╝╚═╝╚═╝  ╚═══╝   ╚═╝
 # =============================================================================
-#  Flint Linux — Fully Audited LFS Automated Build Script v2.0
+#  Flint Linux — Fully Audited LFS Automated Build Script v3.0
 #  Target:  Intel i7-6600U (Skylake) | 12 GB RAM | 256 GB SSD
 #  Init:    dinit  |  WM: Hyprland  |  Pkgmgr: Pacman (bootstrapped)
 #
-#  BUGS FIXED vs original:
+#  BUGS FIXED vs v1 (original):
 #   [URL]    bzip2 URL was pointing to gnu.org (wrong) → sourceware.org
 #   [URL]    psmisc gitlab archive URL was unreliable → sourceforge
 #   [URL]    vim tag v9.1.0 doesn't exist → v9.1.0000
@@ -38,6 +38,17 @@
 #   [DEPS]   libbz2.a not removed after bzip2 → added rm
 #   [DEPS]   Rust/cargo missing for Hyprland deps → added rustup step
 #   [DEPS]   mesa iris needs correct gallium driver name (iris not crocus for SKL)
+#
+#  BUGS FIXED vs v2:
+#   [VER]    texinfo 7.1 → 7.3 (actual latest as of 2026-03-02)
+#   [HYPR]   windowrulev2 fully deprecated since Hyprland 0.48+ → new windowrule syntax
+#   [HYPR]   drop_shadow deprecated → shadow:enabled true (new namespace syntax)
+#   [HYPR]   blur sub-block syntax updated to current wiki spec
+#   [HYPR]   gestures block removed (no longer a top-level block in new Hyprland)
+#   [HYPR]   dwindle smart_split removed (no longer a valid option)
+#   [HYPR]   master new_is_master removed (deprecated option)
+#   [HYPR]   env WLR_RENDERER gles2 removed (Hyprland manages renderer internally)
+#   [LOGIC]  texinfo build step was silently failing due to wrong version → fixed
 #
 #  USAGE:
 #    sudo bash flint-lfs.sh [PHASE]
@@ -102,7 +113,7 @@ MAKE_VER="4.4.1"
 PATCH_VER="2.7.6"
 SED_VER="4.9"
 TAR_VER="1.35"
-TEXINFO_VER="7.1"
+TEXINFO_VER="7.3"
 UTIL_LINUX_VER="2.40"
 PERL_VER="5.38.2"
 PYTHON_VER="3.12.3"
@@ -893,7 +904,6 @@ SED_VER="${SED_VER}"
 TAR_VER="${TAR_VER}"
 TEXINFO_VER="${TEXINFO_VER}"
 UTIL_LINUX_VER="${UTIL_LINUX_VER}"
-PERL_VER="${PERL_VER}"
 PYTHON_VER="${PYTHON_VER}"
 OPENSSL_VER="${OPENSSL_VER}"
 SHADOW_VER="${SHADOW_VER}"
@@ -2044,110 +2054,230 @@ _cfg_hyprland() {
     local D="${LFS}/home/flint/.config/hypr"
     mkdir -p "${D}"
     cat > "${D}/hyprland.conf" <<'EOF'
-# ── Flint Linux — Hyprland Config (i7-6600U / Intel HD 520) ──────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+#  Flint Linux — Hyprland Config
+#  Hardware: i7-6600U / Intel HD 520 (Skylake GT2)
+#  Syntax:   Current wiki spec (Hyprland ≥ 0.48, windowrulev2 is GONE)
+# ══════════════════════════════════════════════════════════════════════════════
 
-monitor=eDP-1,1920x1080@60,0x0,1
-monitor=,preferred,auto,1
+# ── Monitors ──────────────────────────────────────────────────────────────────
+# ThinkPad T460 internal 1080p panel
+monitor = eDP-1, 1920x1080@60, 0x0, 1
+# Auto-place any external monitor to the right
+monitor = , preferred, auto, 1
 
-# Intel HD 520 / Skylake GT2 — use iris driver via Mesa
-env = WLR_DRM_DEVICES,/dev/dri/card0
-env = __GLX_VENDOR_LIBRARY_NAME,mesa
-env = MESA_LOADER_DRIVER_OVERRIDE,iris
-env = WLR_RENDERER,gles2
-env = LIBVA_DRIVER_NAME,iHD
-env = XDG_CURRENT_DESKTOP,Hyprland
-env = XDG_SESSION_TYPE,wayland
-env = XDG_SESSION_DESKTOP,Hyprland
-env = QT_QPA_PLATFORM,wayland;xcb
-env = QT_AUTO_SCREEN_SCALE_FACTOR,1
-env = MOZ_ENABLE_WAYLAND,1
-env = GDK_BACKEND,wayland,x11
+# ── Environment variables ──────────────────────────────────────────────────────
+# Intel HD 520 — force iris Mesa driver (correct for Skylake GT2)
+env = WLR_DRM_DEVICES, /dev/dri/card0
+env = __GLX_VENDOR_LIBRARY_NAME, mesa
+env = MESA_LOADER_DRIVER_OVERRIDE, iris
+env = LIBVA_DRIVER_NAME, iHD
 
+# Wayland / XDG
+env = XDG_CURRENT_DESKTOP, Hyprland
+env = XDG_SESSION_TYPE, wayland
+env = XDG_SESSION_DESKTOP, Hyprland
+
+# App toolkit Wayland hints
+env = QT_QPA_PLATFORM, wayland;xcb
+env = QT_AUTO_SCREEN_SCALE_FACTOR, 1
+env = QT_WAYLAND_DISABLE_WINDOWDECORATION, 1
+env = GDK_BACKEND, wayland,x11
+env = MOZ_ENABLE_WAYLAND, 1
+env = CLUTTER_BACKEND, wayland
+env = SDL_VIDEODRIVER, wayland
+
+# ── Autostart ─────────────────────────────────────────────────────────────────
 exec-once = waybar
-exec-once = dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP
+exec-once = dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE
 
+# ── Input ─────────────────────────────────────────────────────────────────────
 input {
-    kb_layout = us
+    kb_layout  = us
     kb_options = caps:escape
-    follow_mouse = 1
-    sensitivity = 0
+    follow_mouse   = 1
+    sensitivity    = 0
+    accel_profile  = adaptive
+
     touchpad {
-        natural_scroll = yes
-        tap-to-click = yes
-        drag_lock = yes
-        scroll_factor = 0.5
+        natural_scroll   = true
+        tap-to-click     = true
+        drag_lock        = true
+        scroll_factor    = 0.5
+        middle_button_emulation = true
     }
 }
 
+# ── General ───────────────────────────────────────────────────────────────────
 general {
-    gaps_in = 4
-    gaps_out = 8
+    gaps_in    = 4
+    gaps_out   = 8
     border_size = 2
-    col.active_border = rgb(88c0d0) rgb(5e81ac) 45deg
+
+    # gradient border: active cyan→blue, inactive dark
+    col.active_border   = rgb(88c0d0) rgb(5e81ac) 45deg
     col.inactive_border = rgb(3b4252)
-    layout = dwindle
+
+    layout          = dwindle
+    allow_tearing   = false
 }
 
+# ── Decoration ────────────────────────────────────────────────────────────────
 decoration {
-    rounding = 8
-    blur { enabled = true; size = 5; passes = 2; new_optimizations = true }
-    active_opacity = 1.0
+    rounding         = 8
+    active_opacity   = 1.0
     inactive_opacity = 0.93
-    drop_shadow = true
-    shadow_range = 12
-    col.shadow = rgba(1a1a1aee)
+
+    blur {
+        enabled          = true
+        size             = 5
+        passes           = 2
+        new_optimizations = true
+        xray             = false
+    }
+
+    # NOTE: drop_shadow is deprecated — use shadow namespace
+    shadow {
+        enabled        = true
+        range          = 12
+        render_power   = 3
+        color          = rgba(1a1a1aee)
+    }
 }
 
+# ── Animations ────────────────────────────────────────────────────────────────
 animations {
-    enabled = yes
-    bezier = overshot, 0.05, 0.9, 0.1, 1.1
+    enabled = true
+
+    bezier = overshot,  0.05, 0.9, 0.1, 1.1
+    bezier = smoothIn,  0.25, 1.0, 0.5, 1.0
+    bezier = linear,    0.0,  0.0, 1.0, 1.0
+
     animation = windows,    1, 5, overshot, slide
-    animation = windowsOut, 1, 4, default, popin 80%
-    animation = fade,       1, 4, default
+    animation = windowsOut, 1, 4, smoothIn, popin 80%
+    animation = fade,       1, 4, smoothIn
     animation = workspaces, 1, 5, overshot, slidefade 20%
+    animation = border,     1, 5, linear
 }
 
-dwindle { pseudotile = yes; preserve_split = yes; smart_split = true }
-gestures  { workspace_swipe = on; workspace_swipe_fingers = 3 }
-misc      { force_default_wallpaper = 0; disable_hyprland_logo = true; vfr = true }
+# ── Dwindle layout ────────────────────────────────────────────────────────────
+dwindle {
+    pseudotile     = true
+    preserve_split = true
+    # smart_split removed in newer Hyprland — do not add
+}
 
+# ── Misc ──────────────────────────────────────────────────────────────────────
+misc {
+    force_default_wallpaper    = 0
+    disable_hyprland_logo      = true
+    disable_splash_rendering   = true
+    enable_swallow             = true
+    swallow_regex              = ^(foot)$
+    key_press_enables_dpms     = true
+    mouse_move_enables_dpms    = true
+    # vfr saves GPU power on Intel iGPU — keep enabled
+    vfr                        = true
+}
+
+# ── Keybinds ──────────────────────────────────────────────────────────────────
 $mod = SUPER
-bind = $mod, Return, exec, foot
-bind = $mod, Q, killactive
-bind = $mod SHIFT, Q, exit
-bind = $mod, Space, togglefloating
-bind = $mod, F, fullscreen
-bind = $mod, D, exec, wofi --show drun
-bind = $mod, L, exec, swaylock -f
 
-bindel = , XF86AudioRaiseVolume,   exec, wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%+
-bindel = , XF86AudioLowerVolume,   exec, wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-
-bindl  = , XF86AudioMute,          exec, wpctl set-mute   @DEFAULT_AUDIO_SINK@ toggle
-bindel = , XF86MonBrightnessUp,    exec, brightnessctl set 5%+
-bindel = , XF86MonBrightnessDown,  exec, brightnessctl set 5%-
-bind   = , Print, exec, grim -g "$(slurp)" ~/Pictures/$(date +%Y%m%d_%H%M%S).png
+# Core WM
+bind  = $mod,       Return,      exec,           foot
+bind  = $mod,       Q,           killactive
+bind  = $mod SHIFT, Q,           exit
+bind  = $mod,       Space,       togglefloating
+bind  = $mod,       F,           fullscreen,     0
+bind  = $mod SHIFT, F,           fullscreen,     1
+bind  = $mod,       P,           pseudo
 
-bind = $mod, 1, workspace, 1
-bind = $mod, 2, workspace, 2
-bind = $mod, 3, workspace, 3
-bind = $mod, 4, workspace, 4
-bind = $mod, 5, workspace, 5
-bind = $mod SHIFT, 1, movetoworkspace, 1
-bind = $mod SHIFT, 2, movetoworkspace, 2
-bind = $mod SHIFT, 3, movetoworkspace, 3
-bind = $mod SHIFT, 4, movetoworkspace, 4
-bind = $mod SHIFT, 5, movetoworkspace, 5
+# Apps
+bind  = $mod,       D,           exec,    wofi --show drun
+bind  = $mod,       L,           exec,    swaylock -f
 
-bind = $mod, left,  movefocus, l
-bind = $mod, right, movefocus, r
-bind = $mod, up,    movefocus, u
-bind = $mod, down,  movefocus, d
+# Screenshot — requires grim + slurp
+bind  = ,           Print,       exec,    grim -g "$(slurp)" ~/Pictures/$(date +%Y%m%d_%H%M%S).png
+bind  = $mod,       Print,       exec,    grim ~/Pictures/$(date +%Y%m%d_%H%M%S).png
+
+# Volume (wpctl — part of pipewire)
+bindel = , XF86AudioRaiseVolume,  exec, wpctl set-volume -l 1.5 @DEFAULT_AUDIO_SINK@ 5%+
+bindel = , XF86AudioLowerVolume,  exec, wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-
+bindl  = , XF86AudioMute,         exec, wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle
+bindl  = , XF86AudioMicMute,      exec, wpctl set-mute @DEFAULT_SOURCE@ toggle
+
+# Brightness (brightnessctl)
+bindel = , XF86MonBrightnessUp,   exec, brightnessctl set 5%+
+bindel = , XF86MonBrightnessDown, exec, brightnessctl set 5%-
+
+# Workspaces — switch
+bind  = $mod, 1, workspace, 1
+bind  = $mod, 2, workspace, 2
+bind  = $mod, 3, workspace, 3
+bind  = $mod, 4, workspace, 4
+bind  = $mod, 5, workspace, 5
+bind  = $mod, 6, workspace, 6
+bind  = $mod, 7, workspace, 7
+bind  = $mod, 8, workspace, 8
+bind  = $mod, 9, workspace, 9
+bind  = $mod, 0, workspace, 10
+
+# Workspaces — move window to
+bind  = $mod SHIFT, 1, movetoworkspace, 1
+bind  = $mod SHIFT, 2, movetoworkspace, 2
+bind  = $mod SHIFT, 3, movetoworkspace, 3
+bind  = $mod SHIFT, 4, movetoworkspace, 4
+bind  = $mod SHIFT, 5, movetoworkspace, 5
+bind  = $mod SHIFT, 6, movetoworkspace, 6
+bind  = $mod SHIFT, 7, movetoworkspace, 7
+bind  = $mod SHIFT, 8, movetoworkspace, 8
+bind  = $mod SHIFT, 9, movetoworkspace, 9
+bind  = $mod SHIFT, 0, movetoworkspace, 10
+
+# Scratchpad
+bind  = $mod,       S,  togglespecialworkspace, magic
+bind  = $mod SHIFT, S,  movetoworkspace, special:magic
+
+# Focus
+bind  = $mod, left,  movefocus, l
+bind  = $mod, right, movefocus, r
+bind  = $mod, up,    movefocus, u
+bind  = $mod, down,  movefocus, d
+
+# Resize
+binde = $mod CTRL, right, resizeactive,  30  0
+binde = $mod CTRL, left,  resizeactive, -30  0
+binde = $mod CTRL, up,    resizeactive,   0 -30
+binde = $mod CTRL, down,  resizeactive,   0  30
+
+# Mouse window control
 bindm = $mod, mouse:272, movewindow
 bindm = $mod, mouse:273, resizewindow
 
-windowrulev2 = float, class:^(pavucontrol)$
-windowrulev2 = float, class:^(nm-connection-editor)$
-windowrulev2 = opacity 0.88, class:^(foot)$
+# Scroll through workspaces with mouse wheel on bar
+bind  = $mod, mouse_down, workspace, e+1
+bind  = $mod, mouse_up,   workspace, e-1
+
+# ── Window Rules (NEW syntax — windowrulev2 is DEPRECATED since 0.48) ─────────
+# Correct syntax: windowrule = <rule>, match:<field> <value>
+# OR:             windowrule = <rule>, match:class <regex>
+#
+# Float specific apps
+windowrule = float,           match:class ^(pavucontrol)$
+windowrule = float,           match:class ^(blueman-manager)$
+windowrule = float,           match:class ^(nm-connection-editor)$
+windowrule = float,           match:title ^(Picture-in-Picture)$
+windowrule = pin,             match:title ^(Picture-in-Picture)$
+
+# Terminal slight transparency
+windowrule = opacity 0.95 0.88, match:class ^(foot)$
+
+# Dialogs stay focused
+windowrule = stayfocused,     match:class ^(pinentry)(.*)$
+
+# No blur on certain windows (saves GPU on Intel iGPU)
+windowrule = noblur,          match:class ^(firefox)$
+windowrule = noblur,          match:class ^(chromium)$
 EOF
     chown -R 1000:1000 "${LFS}/home/flint"
 }
@@ -2508,40 +2638,3 @@ DONE
 
 trap 'echo -e "\n${YELLOW}Interrupted. Re-run with same phase to resume.${NC}"' INT TERM
 main "$@"
-
-# ... continuing inside the Phase 1 script (flint_phase1.sh) ...
-
-# ── GCC Pass 2 (Continued) ───────────────────────────────────────────────────
-p1_gcc2() {
-    extr "gcc-${GCC_VER}.tar.xz"
-    tar xf "${SRC}/mpfr-${MPFR_VER}.tar.xz"; mv "mpfr-${MPFR_VER}" mpfr
-    tar xf "${SRC}/gmp-${GMP_VER}.tar.xz";   mv "gmp-${GMP_VER}"   gmp
-    tar xf "${SRC}/mpc-${MPC_VER}.tar.gz";   mv "mpc-${MPC_VER}"   mpc
-    sed -e '/m64=/s/lib64/lib/' -i.orig gcc/config/i386/t-linux64
-    
-    # Fix for internal header paths
-    sed '/thread_header =/s/@.*@/gthr-posix.h/' \
-        -i libgcc/Makefile.in libstdc++-v3/include/Makefile.in
-        
-    mkdir build && cd build
-    ../configure                                \
-        --build="$(../config.guess)"            \
-        --host="${LFS_TGT}"                     \
-        --target="${LFS_TGT}"                   \
-        --prefix=/usr                           \
-        --enable-languages=c,c++                \
-        --enable-default-pie                    \
-        --enable-default-ssp                    \
-        --disable-nls                           \
-        --disable-multilib                      \
-        --disable-libstdcxx-pch                 \
-        --with-build-sysroot="${LFS}"
-        
-    make -j"${NPROC}"
-    make DESTDIR="${LFS}" install
-    ln -sv gcc "${LFS}/usr/bin/cc"
-}
-run_step "p1_gcc2" "GCC Pass 2" p1_gcc2
-
-echo -e "\n[FLINT] Phase 1 (Cross-Toolchain) successfully completed."
-EOF # End of the flint_phase1.sh heredoc
